@@ -26,6 +26,7 @@ from napalm.base.exceptions import (
     CommandErrorException,
     CommitConfirmException,
 )
+from napalm.base.netmiko_helpers import netmiko_args
 from napalm.base.helpers import (
     canonical_interface_name,
     transform_lldp_capab,
@@ -64,31 +65,7 @@ class Aruba505Driver(NetworkDriver):
         self.config_commands = list()
 
         # Netmiko possible arguments
-        netmiko_argument_map = {
-            "port": None,
-            "secret": "",
-            "verbose": False,
-            "keepalive": 30,
-            "global_delay_factor": 1,
-            "use_keys": False,
-            "key_file": None,
-            "ssh_strict": False,
-            "system_host_keys": False,
-            "alt_host_keys": False,
-            "alt_key_file": "",
-            "ssh_config_file": None,
-            "allow_agent": False,
-            "session_log": None,
-            "read_timeout_override": 90,  # still monitoring this portion
-        }
-
-        # Build dict of any optional Netmiko args
-        self.netmiko_optional_args = {}
-        for k, v in netmiko_argument_map.items():
-            try:
-                self.netmiko_optional_args[k] = optional_args[k]
-            except KeyError:
-                pass
+        self.netmiko_optional_args = netmiko_args(optional_args)
 
         default_port = {"ssh": 22}
         self.port = optional_args.get("port", default_port[self.transport])
@@ -97,7 +74,6 @@ class Aruba505Driver(NetworkDriver):
         self.interface_map = {}
         self.platform = "cisco_ios"
         self.profile = [self.platform]
-        # self.device.enable()
 
     def get_running_config(self):
         _running_config = self.get_config()
