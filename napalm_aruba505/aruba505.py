@@ -57,7 +57,7 @@ class Aruba505Driver(NetworkDriver):
         self.username = username
         self.password = password
         self.timeout = timeout
-        self.transport = optional_args.get('transport', 'ssh')
+        self.transport = optional_args.get("transport", "ssh")
         self.interfaces = []
         self.archive = str()
         self.new_running_config = str()
@@ -65,20 +65,20 @@ class Aruba505Driver(NetworkDriver):
 
         # Netmiko possible arguments
         netmiko_argument_map = {
-            'port': None,
-            'secret': '',
-            'verbose': False,
-            'keepalive': 30,
-            'global_delay_factor': 1,
-            'use_keys': False,
-            'key_file': None,
-            'ssh_strict': False,
-            'system_host_keys': False,
-            'alt_host_keys': False,
-            'alt_key_file': '',
-            'ssh_config_file': None,
-            'allow_agent': False,
-            'session_log': None,
+            "port": None,
+            "secret": "",
+            "verbose": False,
+            "keepalive": 30,
+            "global_delay_factor": 1,
+            "use_keys": False,
+            "key_file": None,
+            "ssh_strict": False,
+            "system_host_keys": False,
+            "alt_host_keys": False,
+            "alt_key_file": "",
+            "ssh_config_file": None,
+            "allow_agent": False,
+            "session_log": None,
             "read_timeout_override": 90,  # still monitoring this portion
         }
 
@@ -90,8 +90,8 @@ class Aruba505Driver(NetworkDriver):
             except KeyError:
                 pass
 
-        default_port = {'ssh': 22}
-        self.port = optional_args.get('port', default_port[self.transport])
+        default_port = {"ssh": 22}
+        self.port = optional_args.get("port", default_port[self.transport])
         self.device = None
         self.config_replace = False
         self.interface_map = {}
@@ -102,20 +102,20 @@ class Aruba505Driver(NetworkDriver):
     def get_running_config(self):
         _running_config = self.get_config()
         if _running_config:
-            return _running_config['running']
+            return _running_config["running"]
 
     def switch_to_config_mode(self):
         cmd = f"config terminal"
-        self.device.send_command(cmd, expect_string=r'#', read_timeout=90)
+        self.device.send_command(cmd, expect_string=r"#", read_timeout=90)
 
     def switch_to_safe_mode(self):
         cmd = f"end"
-        self.device.send_command(cmd, expect_string=r'#', read_timeout=90)
+        self.device.send_command(cmd, expect_string=r"#", read_timeout=90)
 
     def load_merge_candidate(self, filename=None, config=None):
         """
-            1- cache a copy or the current running config in the archive variable
-            2- run the commands to alter the current running config
+        1- cache a copy or the current running config in the archive variable
+        2- run the commands to alter the current running config
         """
         self.config_replace = False
 
@@ -134,7 +134,7 @@ class Aruba505Driver(NetworkDriver):
             self.switch_to_config_mode()
 
             for cmd in self.config_commands:
-                self.device.send_command(cmd, expect_string=r'#', read_timeout=90)
+                self.device.send_command(cmd, expect_string=r"#", read_timeout=90)
 
             # return to global config mode
             self.switch_to_safe_mode()
@@ -148,20 +148,20 @@ class Aruba505Driver(NetworkDriver):
 
     def compare_config(self):
         """compare the archive against the new copy
-            of the running config and return the diff"""
+        of the running config and return the diff"""
 
         self.new_running_config = self.get_running_config()
         ## time.sleep(2)
         diff = ""
         if self.archive and self.new_running_config:
             for text in difflib.unified_diff(
-                    self.archive.split("\n"),
-                    self.new_running_config.split("\n"), n=0):
-                if text[:3] not in ('+++', '---', '@@ '):
+                self.archive.split("\n"), self.new_running_config.split("\n"), n=0
+            ):
+                if text[:3] not in ("+++", "---", "@@ "):
                     if diff == "":
                         diff = diff + text
                     else:
-                        diff = diff + '\n' + text
+                        diff = diff + "\n" + text
         elif not self.archive:
             raise ValueError(f"The old config is not in the cache\n")
         elif not self.new_running_config:
@@ -187,20 +187,20 @@ class Aruba505Driver(NetworkDriver):
         """Returns a flag with the state of the connection."""
         null = chr(0)
         if self.device is None:
-            return {'is_alive': False}
+            return {"is_alive": False}
         else:
             # SSH
             try:
                 # Try sending ASCII null byte to maintain the connection alive
                 self.device.write_channel(null)
-                return {'is_alive': self.device.remote_conn.transport.is_active()}
+                return {"is_alive": self.device.remote_conn.transport.is_active()}
             except (socket.error, EOFError):
                 # If unable to send, we can tell for sure that the connection is unusable
-                return {'is_alive': False}
+                return {"is_alive": False}
 
     @staticmethod
     def _show_summary_sanitizer(data):
-        """ Collects the fqdn and the serial number from the 'show summary'
+        """Collects the fqdn and the serial number from the 'show summary'
         :returns a tuple with two values (hostname, fqdn, serial_number)
         """
 
@@ -217,12 +217,12 @@ class Aruba505Driver(NetworkDriver):
                 if "DNSDomain" in l and hostname_:
                     fqdn = f"{hostname_}.{l.split(':')[1]}"
                 if "Serial Number" in l:
-                    serial_number = l.split(':')[1]
+                    serial_number = l.split(":")[1]
         return hostname_, fqdn, serial_number
 
     @staticmethod
     def _show_version_sanitizer(data):
-        """ Collects the vendor, model, os version and uptime from the 'show version'
+        """Collects the vendor, model, os version and uptime from the 'show version'
         :returns a tuple with two values (vendor, model, os version, uptime)
         """
         # Initialize to zero
@@ -236,19 +236,39 @@ class Aruba505Driver(NetworkDriver):
             data_l = data.strip().splitlines()
             for l in data_l:
                 if "MODEL" in l:
-                    model, os_version = l.split(',')
+                    model, os_version = l.split(",")
                 if "AP uptime is" in l:
                     tmp_uptime = l.replace("AP uptime is", "").split()
                     uptimes_records = [int(i) for i in tmp_uptime if i.isnumeric()]
 
                     if uptimes_records and len(uptimes_records) >= 5:
                         weeks, days, hours, minutes, seconds = uptimes_records
-                        uptime = float(sum([(years * YEAR_SECONDS), (weeks * WEEK_SECONDS), (days * DAY_SECONDS),
-                                            (hours * HOUR_SECONDS), (minutes * MINUTE_SECONDS), (seconds * SECONDS), ]))
+                        uptime = float(
+                            sum(
+                                [
+                                    (years * YEAR_SECONDS),
+                                    (weeks * WEEK_SECONDS),
+                                    (days * DAY_SECONDS),
+                                    (hours * HOUR_SECONDS),
+                                    (minutes * MINUTE_SECONDS),
+                                    (seconds * SECONDS),
+                                ]
+                            )
+                        )
                     if uptimes_records and len(uptimes_records) == 4:
                         weeks, days, hours, minutes = uptimes_records
-                        uptime = float(sum([(years * YEAR_SECONDS), (weeks * WEEK_SECONDS), (days * DAY_SECONDS),
-                                            (hours * HOUR_SECONDS), (minutes * MINUTE_SECONDS), (seconds * SECONDS), ]))
+                        uptime = float(
+                            sum(
+                                [
+                                    (years * YEAR_SECONDS),
+                                    (weeks * WEEK_SECONDS),
+                                    (days * DAY_SECONDS),
+                                    (hours * HOUR_SECONDS),
+                                    (minutes * MINUTE_SECONDS),
+                                    (seconds * SECONDS),
+                                ]
+                            )
+                        )
 
         return vendor, model, os_version, uptime
 
@@ -286,26 +306,22 @@ class Aruba505Driver(NetworkDriver):
         The candidate and startup are always empty string for now,
         """
 
-        configs = {
-            "running": "",
-            "startup": "No Startup",
-            "candidate": "No Candidate"
-        }
+        configs = {"running": "", "startup": "No Startup", "candidate": "No Candidate"}
 
-        if retrieve.lower() in ('running', 'all'):
+        if retrieve.lower() in ("running", "all"):
             command = "show running-config no-encrypt"
             output_ = self._send_command(command)
             if output_:
-                configs['running'] = output_
-                data = str(configs['running']).split("\n")
+                configs["running"] = output_
+                data = str(configs["running"]).split("\n")
                 non_empty_lines = [line for line in data if line.strip() != ""]
 
                 string_without_empty_lines = ""
                 for line in non_empty_lines:
                     string_without_empty_lines += line + "\n"
-                configs['running'] = string_without_empty_lines
+                configs["running"] = string_without_empty_lines
 
-        if retrieve.lower() in ('startup', 'all'):
+        if retrieve.lower() in ("startup", "all"):
             pass
         return configs
 
@@ -317,24 +333,30 @@ class Aruba505Driver(NetworkDriver):
         show_summary_output = self._send_command("show summary")
 
         # processing 'show version' output
-        configs['show_version'] = show_version_output
-        show_version_data = str(configs['show_version']).split("\n")
-        show_version_non_empty_lines = [line for line in show_version_data if line.strip() != ""]
+        configs["show_version"] = show_version_output
+        show_version_data = str(configs["show_version"]).split("\n")
+        show_version_non_empty_lines = [
+            line for line in show_version_data if line.strip() != ""
+        ]
 
         show_version_string_ = ""
         for line in show_version_non_empty_lines:
             show_version_string_ += line + "\n"
-        vendor, model, os_version, uptime = self._show_version_sanitizer(show_version_string_)
+        vendor, model, os_version, uptime = self._show_version_sanitizer(
+            show_version_string_
+        )
 
         # processing 'show summary' output
-        configs['running_'] = show_summary_output
-        data = str(configs['running_']).split("\n")
+        configs["running_"] = show_summary_output
+        data = str(configs["running_"]).split("\n")
         non_empty_lines = [line for line in data if line.strip() != ""]
 
         show_summary_string_ = ""
         for line in non_empty_lines:
             show_summary_string_ += line + "\n"
-        hostname_, fqdn_, serial_number_ = self._show_summary_sanitizer(show_summary_string_)
+        hostname_, fqdn_, serial_number_ = self._show_summary_sanitizer(
+            show_summary_string_
+        )
 
         return {
             "hostname": str(hostname_),
@@ -379,26 +401,36 @@ class Aruba505Driver(NetworkDriver):
                     return status
 
     def _get_interfaces_status(self):
-        """ This function can be used to get the status of each interface
+        """This function can be used to get the status of each interface
         in progress"""
 
         interface_e0_status = self.sanitize_interface_status(
-            self._send_command("show wired - port - settings E0"))
+            self._send_command("show wired - port - settings E0")
+        )
         time.sleep(1)
         interface_e1_status = self.sanitize_interface_status(
-            self._send_command("show wired - port - settings E1"))
+            self._send_command("show wired - port - settings E1")
+        )
         time.sleep(1)
         interface_e2_status = self.sanitize_interface_status(
-            self._send_command("show wired - port - settings E2"))
+            self._send_command("show wired - port - settings E2")
+        )
         time.sleep(1)
         interface_e3_status = self.sanitize_interface_status(
-            self._send_command("show wired - port - settings E3"))
+            self._send_command("show wired - port - settings E3")
+        )
         time.sleep(1)
         interface_e4_status = self.sanitize_interface_status(
-            self._send_command("show wired - port - settings E4"))
+            self._send_command("show wired - port - settings E4")
+        )
 
-        return [interface_e0_status, interface_e1_status,
-               interface_e2_status, interface_e3_status, interface_e4_status]
+        return [
+            interface_e0_status,
+            interface_e1_status,
+            interface_e2_status,
+            interface_e3_status,
+            interface_e4_status,
+        ]
 
     def get_interfaces(self):
         """
@@ -414,15 +446,17 @@ class Aruba505Driver(NetworkDriver):
          * MTU (in Bytes)
          * mac_address (string)
         """
-        show_interfaces = "show interface"
-        data = self._send_command(show_interfaces)
-
-        # process the show interface output
-        new_data = [line.strip() for line in data.splitlines()]
         interfaces = {}
+
+        show_interfaces = "show interface"
+        interface_data = self._send_command(show_interfaces)
+        new_interface_data = [line.strip() for line in interface_data.splitlines()]
         temp_list = []
 
-        for line in new_data:
+        show_ip_interfaces = "show ip interface brief"
+        ip_interface_data = self._send_command(show_ip_interfaces)
+
+        for line in new_interface_data:
             if line.startswith("eth"):
                 temp_list.append(line.split()[0])
                 if "line protocol is up" in line:
@@ -442,23 +476,39 @@ class Aruba505Driver(NetworkDriver):
             if line.startswith("Hardware is"):
                 temp_list.append(line.split()[-1])
 
-            if "Speed" and 'duplex' in line:
+            if "Speed" and "duplex" in line:
                 line = line.split()[1]
                 if "unknown" in line:
                     temp_list.append("unknown")
                 elif "Mb/s," in line:
                     temp_list.append(line.replace("Mb/s,", ""))
                 interfaces[f"{temp_list[0]}"] = {
-                    'is_up': temp_list[1],
-                    'is_enabled': temp_list[2],
-                    'description': '',
-                    'last_flapped': -1.0,
-                    'speed': temp_list[4],
-                    'mtu': 0,
-                    'mac_address': temp_list[3],
+                    "is_up": temp_list[1],
+                    "is_enabled": temp_list[2],
+                    "description": "",
+                    "last_flapped": -1.0,
+                    "speed": temp_list[4],
+                    "mtu": 0,
+                    "mac_address": temp_list[3],
                 }
                 temp_list.clear()
 
+        for line in ip_interface_data.splitlines():
+            if line.startswith("Interface  "):
+                continue
+            line_list = line.split()
+            interface = line_list[0]
+            # Ignore sub-interfaces
+            if not "." in interface:
+                interfaces[interface] = {
+                    "is_up": line_list[5],
+                    "is_enabled": line_list[4],
+                    "description": "",
+                    "last_flapped": -1.0,
+                    "speed": "",
+                    "mtu": 0,
+                    "mac_address": "",
+                }
         return interfaces
 
     def get_environment(self):
@@ -476,7 +526,9 @@ class Aruba505Driver(NetworkDriver):
 
         cpu_output = self._send_command(cpu_cmd)
         # process cpu outputs
-        data = [line.strip() for line in cpu_output.splitlines() if "system" in str(line)]
+        data = [
+            line.strip() for line in cpu_output.splitlines() if "system" in str(line)
+        ]
         current_cpu_usage = 0
         for line in data:
             if line:
@@ -510,7 +562,12 @@ class Aruba505Driver(NetworkDriver):
 
         for command in commands:
             output = self._send_command(command)
-            if "Invalid input:" in output or "error" in output or "Invalid" in output or "invalid" in output:
+            if (
+                "Invalid input:" in output
+                or "error" in output
+                or "Invalid" in output
+                or "invalid" in output
+            ):
                 raise ValueError('Unable to execute command "{}"'.format(comman))
             cli_output.setdefault(command, {})
             cli_output[command] = output
