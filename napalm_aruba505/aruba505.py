@@ -477,8 +477,8 @@ class Aruba505Driver(NetworkDriver):
             # Ignore sub-interfaces
             if not "." in interface:
                 interfaces[interface] = {
-                    "is_up": line_list[5],
-                    "is_enabled": line_list[4],
+                    "is_up": True if line_list[5] == "up" else False,
+                    "is_enabled": True if line_list[4] == "up" else False,
                     "description": "",
                     "last_flapped": -1.0,
                     "speed": "",
