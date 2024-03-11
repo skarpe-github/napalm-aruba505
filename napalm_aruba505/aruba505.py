@@ -511,7 +511,7 @@ class Aruba505Driver(NetworkDriver):
         for command in commands:
             output = self._send_command(command)
             if "Invalid input:" in output or "error" in output or "Invalid" in output or "invalid" in output:
-                raise ValueError('Unable to execute command "{}"'.format(command))
+                raise ValueError('Unable to execute command "{}"'.format(comman))
             cli_output.setdefault(command, {})
             cli_output[command] = output
 
@@ -520,12 +520,42 @@ class Aruba505Driver(NetworkDriver):
     def get_vlans(self):
         """Get vlans from the device"""
 
-        data = self._send_command("show network")
-        if data:
-            new_data = [line.strip() for line in data.splitlines()]
-            vlans = {}
-            for i in new_data:
-                if "employee  all   Per User" in i:
-                    line = i.split()
-                    vlans[f"{line[9]}"] = {f"name": f"{line[0]}"}
-            return vlans
+        vlans = {}
+        networks = self._send_command("show network")
+        wired_ports = self._send_command("show wired-port-settings")
+        networks_regex = r"(?<=-{14}\n)((.|\n)*)"
+        port_regex = r"(?<=-{19}\n)((.|\n)*)(?=Port Profile Assignments)"
+        if wired_ports:
+            port_data = re.search(port_regex, wired_ports, re.MULTILINE)
+            for line in port_data.group(1).splitlines():
+                data_list = line.split()
+                vlan_id = data_list[3]
+                try:
+                    vlan_id = int(vlan_id)
+                except ValueError:
+                    continue
+                interface = data_list[0]
+                vlans.setdefault(vlan_id, {"name": "", "interfaces": []})
+                interfaces = vlans.get(vlan_id).get("interfaces")
+                interfaces.append(interface)
+                vlans[vlan_id]["name"] = ""
+                vlans[vlan_id]["interfaces"] = interfaces
+        if networks:
+            nw_data = re.search(networks_regex, networks, re.MULTILINE)
+            for line in nw_data.group(1).splitlines():
+                data_list = line.split()
+                # locate string VLAN to find position of vid
+                vlan_index = data_list.index("VLAN") + 1
+                vlan_id = data_list[vlan_index]
+                try:
+                    vlan_id = int(vlan_id)
+                except ValueError:
+                    continue
+                # use SSID as vlan name
+                vlan_name = data_list[1]
+                vlans.setdefault(vlan_id, {"name": "", "interfaces": []})
+                interfaces = vlans.get(vlan_id).get("interfaces")
+                interfaces.append(vlan_name)
+                vlans[vlan_id]["name"] = vlan_name
+                vlans[vlan_id]["interfaces"] = interfaces
+        return vlans
