@@ -592,3 +592,54 @@ class Aruba505Driver(NetworkDriver):
                 vlans[vlan_id]["name"] = vlan_name
                 vlans[vlan_id]["interfaces"] = interfaces
         return vlans
+
+    @staticmethod
+    def netmask_to_length(netmask):
+        """
+        Convert subnet mask to prefix length (255.255.255.0 -> /24)
+        """
+        return sum([bin(int(x)).count('1') for x in netmask.split('.')])
+
+    def get_interfaces_ip(self):
+        """
+        Returns all configured IP addresses on all interfaces as a dictionary of dictionaries.
+        Keys of the main dictionary represent the name of the interface.
+        """
+        ip_interfaces = {}
+        ipv4 = self._send_command("show ip interface brief")
+        ipv6 = self._send_command("show ipv6 interface brief")
+
+        for line in ipv4.splitlines():
+            if line.startswith("Interface  "):
+                continue
+            line_list = line.split()
+            interface = line_list[0]
+            ipv4_addr = line_list[1]
+            netmask = line_list[3]
+            prefix_length = self.netmask_to_length(netmask)
+            ip_interfaces.setdefault(interface, {})
+            ip_interfaces[interface].setdefault("ipv4", {})
+            ip_interfaces[interface]["ipv4"] = {
+                ipv4_addr: {"prefix_length": prefix_length}
+            }
+
+        ipv6_list = ipv6.splitlines()[1:]
+        ipv6_interfaces = []
+
+        for line in ipv6_list:
+            if line.startswith("br"):
+                ipv6_interfaces.append(line)
+            else:
+                ipv6_interfaces[-1] += (";" + line)
+        for interface_record in ipv6_interfaces:
+            for line in interface_record.split(";"):
+                if "line protocol" in line:
+                    interface = line.split()[0]
+                    ip_interfaces.setdefault(interface, {})
+                    ip_interfaces[interface].setdefault("ipv6", {})
+                if "subnet is" in line:
+                    ipv6_addr_with_len = line.split()[0]
+                    ipv6_addr, prefix_length = ipv6_addr_with_len.split("/")
+                    ip_interfaces[interface]["ipv6"] = {ipv6_addr: {"prefix_length": prefix_length}}
+
+        return ip_interfaces

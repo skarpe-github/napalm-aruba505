@@ -12,6 +12,7 @@
     <ul> get_facts() </ul>
     <ul> get_lldp_neighbors </ul>
     <ul> get_interfaces </ul>
+    <ul> get_interfaces_ip </ul>
     <ul> get_environment </ul>
     <ul> get_vlans </ul>
     <ul> get_running_config() </ul>
