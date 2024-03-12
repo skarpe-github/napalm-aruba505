@@ -640,6 +640,7 @@ class Aruba505Driver(NetworkDriver):
                 if "subnet is" in line:
                     ipv6_addr_with_len = line.split()[0]
                     ipv6_addr, prefix_length = ipv6_addr_with_len.split("/")
+                    prefix_length = prefix_length.replace(",", "")
                     ip_interfaces[interface]["ipv6"] = {ipv6_addr: {"prefix_length": prefix_length}}
 
         return ip_interfaces
