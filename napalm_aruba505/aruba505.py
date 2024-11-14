@@ -266,8 +266,8 @@ class Aruba505Driver(NetworkDriver):
         try:
             if isinstance(command, list):
                 for cmd in command:
-                    output = self.device.send_command(cmd)
-                    if "% Invalid" not in output:
+                    output = self.device.send_command(cmd, expect_string=r"#")
+                    if "% Invalid" in output:
                         break
             else:
                 output = self.device.send_command(command)
