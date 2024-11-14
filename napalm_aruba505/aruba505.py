@@ -544,7 +544,7 @@ class Aruba505Driver(NetworkDriver):
                 or "Invalid" in output
                 or "invalid" in output
             ):
-                raise ValueError('Unable to execute command "{}"'.format(comman))
+                raise ValueError('Unable to execute command "{}"'.format(command))
             cli_output.setdefault(command, {})
             cli_output[command] = output
 
