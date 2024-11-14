@@ -7,7 +7,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name = "napalm_aruba505",
-    version = "0.0.168",
+    version = "0.0.169",
     author = "David Johnnes",
     author_email = "david.johnnes@gmail.com",
     description = ("Napalm Aruba driver for ArubaOS Wi-Fi devices '505' "),
