@@ -266,11 +266,11 @@ class Aruba505Driver(NetworkDriver):
         try:
             if isinstance(command, list):
                 for cmd in command:
-                    output = self.device.send_command(cmd)
-                    if "% Invalid" not in output:
+                    output = self.device.send_command(cmd, expect_string=r"#")
+                    if "% Invalid" in output:
                         break
             else:
-                output = self.device.send_command(command)
+                output = self.device.send_command(command, expect_string=r"#")
             return self._send_command_postprocess(output)
         except (socket.error, EOFError) as e:
             raise ConnectionClosedException(str(e))
@@ -544,7 +544,7 @@ class Aruba505Driver(NetworkDriver):
                 or "Invalid" in output
                 or "invalid" in output
             ):
-                raise ValueError('Unable to execute command "{}"'.format(comman))
+                raise ValueError('Unable to execute command "{}"'.format(command))
             cli_output.setdefault(command, {})
             cli_output[command] = output
 
