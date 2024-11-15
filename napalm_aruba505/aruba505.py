@@ -270,7 +270,7 @@ class Aruba505Driver(NetworkDriver):
                     if "% Invalid" in output:
                         break
             else:
-                output = self.device.send_command(command)
+                output = self.device.send_command(command, expect_string=r"#")
             return self._send_command_postprocess(output)
         except (socket.error, EOFError) as e:
             raise ConnectionClosedException(str(e))
