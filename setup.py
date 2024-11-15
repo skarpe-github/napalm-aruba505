@@ -13,7 +13,7 @@ setuptools.setup(
     description = ("Napalm Aruba driver for ArubaOS Wi-Fi devices '505' "),
     license = "Apache 2",
     keywords = "napalm drive",
-    url="https://github.com/djohnnes/napalm-arubaOS",
+    url="https://github.com/skarpe-github/napalm-aruba505",
     packages=['napalm_aruba505'],
     long_description=long_description,
     long_description_content_type='text/markdown',
