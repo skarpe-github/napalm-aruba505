@@ -1,16 +1,9 @@
 # -*- coding: utf-8 -*-
 """NAPALM ArubaOS Five zero five Handler."""
 
-import copy
-import functools
-import os
 import re
 import socket
-import telnetlib
-import tempfile
 import time
-import uuid
-from collections import defaultdict
 import difflib
 from netaddr import IPNetwork
 from netaddr.core import AddrFormatError
