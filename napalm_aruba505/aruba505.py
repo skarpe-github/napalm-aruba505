@@ -15,6 +15,7 @@ import difflib
 from netaddr import IPNetwork
 from netaddr.core import AddrFormatError
 from netmiko import FileTransfer, InLineTransfer
+from typing import Union, Generator
 
 import napalm.base.constants as C
 import napalm.base.helpers
@@ -63,6 +64,27 @@ class Aruba505Driver(NetworkDriver):
         self.archive = str()
         self.new_running_config = str()
         self.config_commands = list()
+
+        # attributes used by config replace
+        self.compare_config_has_run = False
+        self.pre_change = list()
+        self.new_config = list()
+        self.pre_change_dict = dict()
+        self.new_config_dict = dict()
+        self.has_diff = {
+            "general": False,
+            "snmp": False,
+            "radio": False,
+            "syslog": False,
+            "manager": False,
+            "access_rules": False,
+            "ssid_profile": False,
+            "auth_survivability": False,
+            "auth": False,
+            "other": False,
+            "wired": False,
+            "trailer": False
+        }
 
         # Netmiko possible arguments
         self.netmiko_optional_args = netmiko_args(optional_args)
@@ -119,32 +141,421 @@ class Aruba505Driver(NetworkDriver):
             # Exiting
             self.switch_to_safe_mode()
         if filename:
-            # TODO: handle this portion latter in case we want to save the running config to an external DB.
-            ...
+            raise NotImplementedError
 
-    def compare_config(self):
-        """compare the archive against the new copy
-        of the running config and return the diff"""
+    def load_replace_candidate(
+        self, filename: str = None, config: str = None
+    ) -> None:
+        """
+        Aruba Access Point do not have a candidate data store. 
+        Therefore, this method loads the new configuration into a class attribute.
 
-        self.new_running_config = self.get_running_config()
-        ## time.sleep(2)
-        diff = ""
-        if self.archive and self.new_running_config:
-            for text in difflib.unified_diff(
-                self.archive.split("\n"), self.new_running_config.split("\n"), n=0
-            ):
-                if text[:3] not in ("+++", "---", "@@ "):
-                    if diff == "":
-                        diff = diff + text
-                    else:
-                        diff = diff + "\n" + text
-        elif not self.archive:
-            raise ValueError(f"The old config is not in the cache\n")
-        elif not self.new_running_config:
-            raise ValueError(f"The current running config is not available\n")
+        :param filename: Path to the file containing the desired configuration. By default is None.
+        :param config: String containing the desired configuration.
+        :raise ReplaceConfigException: If there is an error on the configuration sent.
+        """
+        self.config_replace = True
+        new_config = config.split("\n")
+        if filename:
+            raise NotImplementedError
+        # save current running config to startup
+        self.device.send_command("commit apply")
+        # get current running config
+        configs = self.get_config(retrieve="running")
+        pre_change = configs.get("running", "").split("\n")
+        if not pre_change:
+            raise ValueError("Not able to retrieve current running-config.")
+        self.new_config = self._cleanup_config(config=new_config)
+        self.pre_change = self._cleanup_config(config=pre_change)
+
+    def compare_config(self) -> str:
+        """
+        Compare the current running-configuration with the new configuration
+        loaded through load_merge_candidate or load_replace_candidate and return the diff.
+        """
+        self.compare_config_has_run = True
+        if self.config_replace:
+            # diff when loaded by replace method
+            diff = []
+            # calculate diff for each config part
+            self.pre_change_dict = self._slice_config(config=self.pre_change)
+            self.new_config_dict = self._slice_config(config=self.new_config)
+            for config_part in self.new_config_dict.keys():
+                diff_found, _ = self._check_diff(config1=self.pre_change_dict.get(config_part), config2=self.new_config_dict.get(config_part))
+                if diff_found:
+                    self.has_diff[config_part] = True
+            # calculate diff for user output
+            diff_found, diff_data = self._check_diff(config1=self.pre_change, config2=self.new_config)
+            if diff_found:
+                for line in diff_data:
+                    diff.append(line)
+                diff = "\n".join(diff)
+            else:
+                diff = ""
         else:
-            ...
+            # diff when loaded by merge method
+            self.new_running_config = self.get_running_config()
+            diff = ""
+            if self.archive and self.new_running_config:
+                for text in difflib.unified_diff(
+                    self.archive.split("\n"), self.new_running_config.split("\n"), n=0
+                ):
+                    if text[:3] not in ("+++", "---", "@@ "):
+                        if diff == "":
+                            diff = diff + text
+                        else:
+                            diff = diff + "\n" + text
+            elif not self.archive:
+                raise ValueError(f"The old config is not in the cache\n")
+            elif not self.new_running_config:
+                raise ValueError(f"The current running config is not available\n")
         return diff
+
+    def _slice_config(self, config: list) -> dict:
+        """
+        Slice configuration into config blocks. Method returns a dictionary.
+        """
+        config_dict = {
+            "general": [],
+            "snmp": [],
+            "radio": [],
+            "syslog": [],
+            "manager": [],
+            "access_rules": [],
+            "ssid_profile": [],
+            "auth_survivability": [],
+            "auth": [],
+            "other": [],
+            "wired": [],
+            "trailer": []
+        }
+        slice_dict = {
+            "general": {"start": ":", "end": "", "end_before": ""},
+            "snmp": {"start": "snmp-server", "end": "snmp-server", "end_before": ""},
+            "radio": {"start": "arm", "end": "", "end_before": "syslog-level"},
+            "syslog": {"start": "syslog-level", "end": "", "end_before": ""},
+            "manager": {"start": "hash-mgmt-", "end": "hash-mgmt-", "end_before": ""},
+            "access_rules": {"start": "wlan access-rule", "end": "", "end_before": ""},
+            "ssid_profile": {"start": "wlan ssid-profile", "end": "", "end_before": ""},
+            "auth_survivability": {"start": "auth-survivability", "end": "", "end_before": ""},
+            "auth": {"start": "mgmt-auth-server", "end": "wlan auth-server", "end_before": ""},
+            "other": {"start": "wlan external-captive-portal", "end": "", "end_before": "wired-port-profile"},
+            "wired": {"start": "wired-port-profile", "end": "-port-profile", "end_before": ""},
+            "trailer": {"start": "", "end": ":"}
+        }
+        # find indices where to slice list
+        slice_start = []
+        slice_end = []
+        # for separator in separators:
+        for key, keywords in slice_dict.items():
+            start = keywords.get("start")
+            end = keywords.get("end")
+            if start == ":":
+                # first block
+                slice_start.append(0)
+                slice_end.append(None)
+                continue
+            if not any(start in line for line in config):
+                # start point not found anywhere in config
+                slice_start.append(None)
+                slice_end.append(None)
+            else:
+                start_found_at = 0
+                # find start point
+                for obj_id, line in enumerate(config):
+                    if start in line:
+                        slice_start.append(obj_id)
+                        start_found_at = obj_id
+                        break
+                # find end point
+                end_found_at = start_found_at
+                for obj_id, line in enumerate(config):
+                    if obj_id >= start_found_at:
+                        # find last line that contains end string
+                        if end and end in line:
+                            end_found_at = obj_id + 1
+                        else:
+                            if keywords.get("end_before"):
+                                if keywords.get("end_before") in line:
+                                    end_found_at = obj_id
+                                    break
+                            # if end string has not been set,
+                            # find either last line that starts like the start line
+                            # or last line that is indented and starts with a blank space
+                            elif start in line or line.startswith(" "):
+                                end_found_at = obj_id + 1
+                            else:
+                                break
+                slice_end.append(end_found_at)
+        # set endpoint for first block
+        if slice_start[1] > 0:
+            slice_end[0] = slice_start[1]
+        else:
+            slice_end[0] = 0
+        # set start/end point for last block
+        slice_start[-1] = slice_end[-2]
+        slice_end[-1] = len(config)
+        if None in slice_start:
+            for id, _ in enumerate(slice_start):
+                if slice_start[id] == None:
+                    # calculate the gap and set missing start/end points
+                    last_endpoint = id-1
+                    new_start = slice_end[last_endpoint]+1
+                    end_id = id+1
+                    new_end = slice_start[end_id]-1
+                    if new_end > new_start:
+                        slice_start[id] = new_start
+                        slice_end[id] = new_end
+                    else:
+                        slice_start[id] = 0
+                        slice_end[id] = 0
+        # slicing at indices
+        start = 0
+        for key, start, end in zip(config_dict.keys(), slice_start, slice_end):
+            if key == "trailer":
+                end == ":"
+                config_dict[key] = config[start:end]
+            elif start == end and start > 0:
+                config_dict[key] = [config[start]]
+            elif not end == 0:
+                config_dict[key] = config[start:end]
+                start = end
+        return config_dict
+
+    def _cleanup_config(self, config: list) -> list:
+        """ Remove empty lines, trailing blank space"""
+        clean_config = []
+        remove_lines  = ["conf t", "end", "exit", "version", "virtual-controller-key", "allowed-ap"]
+        for line in config:
+            line = line.rstrip()
+            if line and not any([skipme in line for skipme in remove_lines]):
+                clean_config.append(line)
+        return clean_config
+
+    def _check_diff(self, config1: list, config2: list) -> Union[bool, Generator[str, None, None]]:
+        """ Calculate the diff between 2 config parts"""
+        if config1 == None:
+            config1 = []
+        if config2 == None:
+            config2 = []
+        diff = difflib.context_diff(config1, config2)
+        try:
+            _ = next(diff)
+        except StopIteration:
+            diff_found = False
+        else:
+            diff_found = True
+        return diff_found, diff
+
+    def _wrapper_replace_config_part(self, config_part: list, commands: list) -> None:
+        """ Enter config mode and save partial config to running-cfg.
+        Adjustments to commands for special cases, e.g. removal of old config, when overwriting is not possible"""
+        # if new config is empty, reset to pre-defined defaults
+        if not commands:
+            commands = []
+        commands_at_start = []
+        commands_at_end = []
+        if config_part == "general":
+            commands_at_start.append("no banner motd")
+            commands_at_start.append("no allow-new-aps")
+        elif config_part == "snmp":
+            for line in self.pre_change_dict.get("snmp"):
+                if "snmp-server community" in line:
+                    commands_at_start.append(f"no {line}")
+        elif config_part == "radio":
+            commands_at_start.append("no arm")
+            # remove existing rf radio profiles
+            remove_string = "rf "
+            for line in self.pre_change_dict.get("radio"):
+                if line.startswith(remove_string):
+                    commands_at_start.append(f"no {line}")
+            # remove parameter that cannot be removed by no arm cmd
+            if any(line == "arm" for line in commands) and not any(line == "80mhz-support" for line in commands):
+                commands_at_end.append("arm")
+                commands_at_end.append(" no 80mhz-support")
+        elif config_part == "syslog":
+            # simply overwrite existing config
+            pass
+        elif config_part == "manager":
+            remove_string = "hash-mgmt-user"
+            for line in self.pre_change_dict.get("manager"):
+                if remove_string in line and not "manager" in line:
+                    commands_at_start.append(f"no {line}")
+        elif config_part == "access_rules":
+            # remove all wired-port-profiles as existing ACL references cannot be modified
+            remove_string = "wired-port-profile"
+            for line in self.pre_change_dict.get("wired"):
+                if remove_string in line and not "wired-SetMeUp" in line and not "E0" in line:
+                    commands_at_start.append(f"no {line}")
+                elif "enet" in line and "-port-profile" in line and not "enet0" in line:
+                    enet_port_profile = line.split()[0]
+                    commands_at_start.insert(0, f"no {enet_port_profile}")
+            # remove access_rules and all references first
+            for line in self.pre_change_dict.get("access_rules"):
+                if "wlan access-rule" in line and not "wired-SetMeUp" in line:
+                    commands_at_start.append(f"no {line}")
+            # add wired-port-profiles again
+            commands_at_end = []
+            for line in self.new_config_dict.get("wired"):
+                # wired-port-profile wired-SetMeUp and E0 is not editable, remove from commands
+                if "enet0-port-profile" in line:
+                    continue
+                if "wired-port-profile wired-SetMeUp" in line or "wired-port-profile E0" in line:
+                    skip_parent = True
+                elif "-port-profile " in line:
+                    skip_parent = False
+                if not skip_parent:
+                    commands_at_end.append(line)
+        elif config_part == "ssid_profile":
+            # remove all ssid profiles
+            remove_string = "wlan ssid-profile"
+            for line in self.pre_change_dict.get("ssid_profile"):
+                if remove_string in line:
+                    commands_at_start.append(f"no {line}")
+        elif config_part == "auth":
+            # remove auth servers from wired port profiles
+            for line in self.pre_change_dict.get("wired"):
+                if "wired-port-profile" in line and not "wired-SetMeUp" in line:
+                    remember_parent = line
+                if "auth-server" in line and not "wired-SetMeUp" in line:
+                    commands_at_start.append(remember_parent)
+                    commands_at_start.append(f" no{line}")
+            # remove auth servers from ssid profiles
+            for line in self.pre_change_dict.get("ssid_profile"):
+                if "wlan ssid-profile" in line:
+                    remember_parent = line
+                if "auth-server" in line:
+                    commands_at_start.append(remember_parent)
+                    commands_at_start.append(f" no {line}")
+            # save, so that references are removed and deletion is permitted
+            commands_at_start.append("end")
+            commands_at_start.append("commit apply no-save")
+            commands_at_start.append("conf t")
+            # remove all auth servers
+            remove_string = "mgmt-auth-server"
+            for line in self.pre_change_dict.get("auth"):
+                if remove_string in line:
+                    commands_at_start.append(f"no {line}")
+            remove_string = "wlan auth-server"
+            for line in self.pre_change_dict.get("auth"):
+                if remove_string in line:
+                    commands_at_start.append(f"no {line}")
+            # save, so that references are removed and deletion is permitted
+            commands_at_start.append("end")
+            commands_at_start.append("commit apply no-save")
+            commands_at_start.append("conf t")
+            commands_at_end = [line for line in commands if "mgmt-auth-server" in line]
+            clean_commands = [line for line in commands if "mgmt-auth-server" not in line]
+            commands = clean_commands
+            # add auth servers to wired port profiles again
+            for line in self.new_config_dict.get("wired"):
+                if "wired-port-profile" in line and not "wired-SetMeUp" in line:
+                    remember_parent = line
+                if "auth-server" in line and not "wired-SetMeUp" in line:
+                    commands_at_end.append(remember_parent)
+                    commands_at_end.append(f" {line}")
+            # add auth servers to ssid profiles again
+            for line in self.new_config_dict.get("ssid_profile"):
+                if "wlan ssid-profile" in line:
+                    remember_parent = line
+                if "auth-server" in line:
+                    commands_at_end.append(remember_parent)
+                    commands_at_end.append(f" {line}")
+        elif config_part == "other":
+            for line in self.pre_change_dict.get("other"):
+                if "wlan external-captive-portal " in line:
+                    commands_at_start.append(f"no {line}")
+            commands_at_start.append("no ids")
+        elif config_part == "wired":
+            # remove all wired-port-profiles
+            remove_string = "wired-port-profile"
+            for line in self.pre_change_dict.get("wired"):
+                if remove_string in line and not "wired-SetMeUp" in line and not "E0" in line:
+                    commands_at_start.append(f"no {line}")
+                elif "enet" in line and "-port-profile" in line and not "enet0" in line:
+                    enet_port_profile = line.split()[0]
+                    commands_at_start.insert(0, f"no {enet_port_profile}")
+            # wired-port-profile wired-SetMeUp and E0 is not editable, remove from commands
+            clean_commands = []
+            for line in commands:
+                if "enet0-port-profile" in line:
+                    continue
+                if "wired-port-profile wired-SetMeUp" in line or "wired-port-profile E0" in line:
+                    skip_parent = True
+                elif "-port-profile " in line:
+                    skip_parent = False
+                if not skip_parent:
+                    clean_commands.append(line)
+            commands = clean_commands
+        elif config_part == "trailer":
+            commands_at_start.append("no uplink")
+        # insert commands to remove features before all other commands
+        if commands_at_start:
+            commands_at_start += commands
+            commands = commands_at_start
+        # append commands to re-add features after all other commands
+        if commands_at_end:
+            commands += commands_at_end
+        # add exit command to return from sub-command
+        commands_with_exit = []
+        last_line_is_subcmd = False
+        for line in commands:
+            if not line.startswith(" "):
+                if last_line_is_subcmd:
+                    commands_with_exit.append("exit")
+                commands_with_exit.append(line)
+                last_line_is_subcmd = False
+            else:
+                last_line_is_subcmd = True
+                commands_with_exit.append(line)
+        commands = commands_with_exit
+        commands.insert(0, "conf t")
+        commands.append("end")
+        commands.append("commit apply no-save")
+        _ = self._send_command(commands)
+
+    def commit_config(self) -> None:
+        """
+        Aruba Access Points do not have a candidate data store. Therefore, this method replaces the running
+        configuration with the new configuration.
+        Hint for usage: Load the new configuration through the load_replace_candidate method first.
+        Run compare_config next to find differences per config part.
+        Commit_config will only replace the config parts that have changed.
+        All changes will be saved to the startup config in the end.
+        """
+        # run compare_config to produce diff per config part
+        if not self.compare_config_has_run:
+            self.compare_config()
+        if self.config_replace:
+            for config_part, config_part_cmds in self.new_config_dict.items():
+                # only replace config part, when diff has been found
+                if self.has_diff.get(config_part):
+                    self._wrapper_replace_config_part(config_part=config_part, commands=config_part_cmds)
+        # permanently save configuration
+        self.device.send_command("commit apply")
+
+    def discard_config(self) -> None:
+        """
+        Discards the configuration loaded into the class attributes and reset.
+        """
+        self.compare_config_has_run = False
+        self.config_replace = False
+        self.new_config = list()
+        self.new_config_dict = dict()
+        self.has_diff = {
+            "general": False,
+            "snmp": False,
+            "radio": False,
+            "syslog": False,
+            "manager": False,
+            "access_rules": False,
+            "ssid_profile": False,
+            "auth_survivability": False,
+            "auth": False,
+            "other": False,
+            "wired": False,
+            "trailer": False
+        }
 
     def open(self):
         """Open a connection to the device."""
@@ -267,7 +678,7 @@ class Aruba505Driver(NetworkDriver):
             if isinstance(command, list):
                 for cmd in command:
                     output = self.device.send_command(cmd, expect_string=r"#")
-                    if "% Invalid" in output:
+                    if "% Parse error" in output:
                         break
             else:
                 output = self.device.send_command(command, expect_string=r"#")
@@ -644,3 +1055,4 @@ class Aruba505Driver(NetworkDriver):
                     ip_interfaces[interface]["ipv6"] = {ipv6_addr: {"prefix_length": prefix_length}}
 
         return ip_interfaces
+
