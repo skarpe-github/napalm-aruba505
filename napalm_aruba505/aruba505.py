@@ -420,9 +420,21 @@ class Aruba505Driver(NetworkDriver):
         elif config_part == "ssid_profile":
             # remove all ssid profiles
             remove_string = "wlan ssid-profile"
+            profile_names = []
             for line in self.pre_change_dict.get("ssid_profile"):
                 if remove_string in line:
+                    profile_names.append(line.split()[-1])
                     commands_at_start.append(f"no {line}")
+            # readd ACL that belong to SSID profiles #FIXME
+            skip_parent = False
+            for line in self.new_config_dict.get("access_rules"):
+                if line.startswith("wlan access-rule") and any(profile == line.split()[-1] for profile in profile_names):
+                    commands_at_start.append(line)
+                    skip_parent = False
+                elif line.startswith("wlan access-rule"):
+                    skip_parent = True
+                elif not skip_parent and not "index" in line:
+                    commands_at_start.append(line)
         elif config_part == "auth":
             # remove auth servers from wired port profiles
             for line in self.pre_change_dict.get("wired"):
