@@ -68,7 +68,7 @@ class Aruba505Driver(NetworkDriver):
             "general": False,
             "snmp": False,
             "radio": False,
-            "syslog": False,
+            "services": False,
             "manager": False,
             "access_rules": False,
             "ssid_profile": False,
@@ -227,7 +227,7 @@ class Aruba505Driver(NetworkDriver):
             "general": [],
             "snmp": [],
             "radio": [],
-            "syslog": [],
+            "services": [],
             "manager": [],
             "access_rules": [],
             "ssid_profile": [],
@@ -241,7 +241,7 @@ class Aruba505Driver(NetworkDriver):
             "general": {"start": ":", "end": "", "end_before": ""},
             "snmp": {"start": "snmp-server", "end": "snmp-server", "end_before": ""},
             "radio": {"start": "arm", "end": "", "end_before": "syslog-level"},
-            "syslog": {"start": "syslog-level", "end": "", "end_before": ""},
+            "services": {"start": "syslog-level", "end": "", "end_before": "hash-mgmt-"},
             "manager": {"start": "hash-mgmt-", "end": "hash-mgmt-", "end_before": ""},
             "access_rules": {"start": "wlan access-rule", "end": "", "end_before": ""},
             "ssid_profile": {"start": "wlan ssid-profile", "end": "", "end_before": ""},
@@ -384,9 +384,9 @@ class Aruba505Driver(NetworkDriver):
             if any(line == "arm" for line in commands) and not any(line == "80mhz-support" for line in commands):
                 commands_at_end.append("arm")
                 commands_at_end.append(" no 80mhz-support")
-        elif config_part == "syslog":
-            # simply overwrite existing config
-            pass
+        elif config_part == "services":
+            commands_at_start.append("no web-server")
+            commands_at_start.append("no allow-rest-api")
         elif config_part == "manager":
             remove_string = "hash-mgmt-user"
             for line in self.pre_change_dict.get("manager"):
@@ -524,6 +524,7 @@ class Aruba505Driver(NetworkDriver):
             commands = clean_commands
         elif config_part == "trailer":
             commands_at_start.append("no uplink")
+            commands_at_start.append("no cluster-security")
         # insert commands to remove features before all other commands
         if commands_at_start:
             commands_at_start += commands
@@ -581,7 +582,7 @@ class Aruba505Driver(NetworkDriver):
             "general": False,
             "snmp": False,
             "radio": False,
-            "syslog": False,
+            "services": False,
             "manager": False,
             "access_rules": False,
             "ssid_profile": False,
