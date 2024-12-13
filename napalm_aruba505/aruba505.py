@@ -346,7 +346,7 @@ class Aruba505Driver(NetworkDriver):
             config1 = []
         if config2 == None:
             config2 = []
-        diff = difflib.context_diff(config1, config2)
+        diff = difflib.context_diff(config1, config2, n=8)
         try:
             _ = next(diff)
         except StopIteration:
