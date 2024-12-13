@@ -524,8 +524,9 @@ class Aruba505Driver(NetworkDriver):
                 # only replace config part, when diff has been found
                 if self.has_diff.get(config_part):
                     self._wrapper_replace_config_part(config_part=config_part, commands=config_part_cmds)
-        # permanently save configuration
-        self.device.send_command("commit apply")
+        # permanently save configuration #
+        # 'commit apply' does not work even though it should according to documentation
+        self.device.send_command("write memory")
 
     def discard_config(self) -> None:
         """
