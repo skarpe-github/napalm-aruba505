@@ -78,6 +78,7 @@ class Aruba505Driver(NetworkDriver):
             "wired": False,
             "trailer": False
         }
+        self.new_config_commands = dict()
 
         # Netmiko possible arguments
         self.netmiko_optional_args = netmiko_args(optional_args)
@@ -165,6 +166,7 @@ class Aruba505Driver(NetworkDriver):
         """
         Compare the current running-configuration with the new configuration
         loaded through load_merge_candidate or load_replace_candidate and return the diff.
+        Produce commands to resolve config diff and save for later execution through commit_config method.
         """
         self.compare_config_has_run = True
         if self.config_replace:
@@ -182,6 +184,19 @@ class Aruba505Driver(NetworkDriver):
             if diff_found:
                 for line in diff_data:
                     diff.append(line)
+                # produce list of commands to resolve diff and add to diff output
+                diff.append("\n")
+                diff.append(f"*"*40)
+                diff.append("COMMANDS TO BE EXECUTED TO RESOLVE DIFF:")
+                diff.append(f"*"*40)
+                for config_part, config_part_cmds in self.new_config_dict.items():
+                    # only replace config part, when diff has been found
+                    if self.has_diff.get(config_part):
+                        commands = self._command_enrichment(config_part=config_part, commands=config_part_cmds)
+                        diff.extend(commands)
+                        diff.append(f"*"*40)
+                        self.new_config_commands[config_part] = commands
+                diff.append("write mem\n")
                 diff = "\n".join(diff)
             else:
                 diff = ""
@@ -340,9 +355,12 @@ class Aruba505Driver(NetworkDriver):
             diff_found = True
         return diff_found, diff
 
-    def _wrapper_replace_config_part(self, config_part: list, commands: list) -> None:
-        """ Enter config mode and save partial config to running-cfg.
-        Adjustments to commands for special cases, e.g. removal of old config, when overwriting is not possible"""
+    def _command_enrichment(self, config_part: list, commands: list) -> list:
+        """
+        Enter config mode and save partial config to running-cfg.
+        Adjustments to commands for special cases, e.g. removal of old config, when overwriting is not possible.
+        Returns a modified list of commands.
+        """
         # if new config is empty, reset to pre-defined defaults
         if not commands:
             commands = []
@@ -505,7 +523,7 @@ class Aruba505Driver(NetworkDriver):
         commands.insert(0, "conf t")
         commands.append("end")
         commands.append("commit apply no-save")
-        _ = self._send_command(commands)
+        return commands
 
     def commit_config(self) -> None:
         """
@@ -520,11 +538,10 @@ class Aruba505Driver(NetworkDriver):
         if not self.compare_config_has_run:
             self.compare_config()
         if self.config_replace:
-            for config_part, config_part_cmds in self.new_config_dict.items():
-                # only replace config part, when diff has been found
+            for config_part in self.new_config_dict.keys():
                 if self.has_diff.get(config_part):
-                    self._wrapper_replace_config_part(config_part=config_part, commands=config_part_cmds)
-        # permanently save configuration #
+                    _ = self._send_command(self.new_config_commands.get(config_part, []))
+        # permanently save configuration
         # 'commit apply' does not work even though it should according to documentation
         self.device.send_command("write memory")
 
@@ -550,6 +567,7 @@ class Aruba505Driver(NetworkDriver):
             "wired": False,
             "trailer": False
         }
+        self.new_config_commands = dict()
 
     def open(self):
         """Open a connection to the device."""
