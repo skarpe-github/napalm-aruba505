@@ -425,7 +425,7 @@ class Aruba505Driver(NetworkDriver):
                 if remove_string in line:
                     profile_names.append(line.split()[-1])
                     commands_at_start.append(f"no {line}")
-            # readd ACL that belong to SSID profiles #FIXME
+            # readd ACLs that belong to SSID profiles
             skip_parent = False
             for line in self.new_config_dict.get("access_rules"):
                 if line.startswith("wlan access-rule") and any(profile == line.split()[-1] for profile in profile_names):
@@ -492,12 +492,24 @@ class Aruba505Driver(NetworkDriver):
         elif config_part == "wired":
             # remove all wired-port-profiles
             remove_string = "wired-port-profile"
+            profile_names = []
             for line in self.pre_change_dict.get("wired"):
                 if remove_string in line and not "wired-SetMeUp" in line and not "E0" in line:
                     commands_at_start.append(f"no {line}")
+                    profile_names.append(line.split()[-1])
                 elif "enet" in line and "-port-profile" in line and not "enet0" in line:
                     enet_port_profile = line.split()[0]
                     commands_at_start.insert(0, f"no {enet_port_profile}")
+            # readd ACLs that belong to wired-port profiles
+            skip_parent = False
+            for line in self.new_config_dict.get("access_rules"):
+                if line.startswith("wlan access-rule") and any(profile == line.split()[-1] for profile in profile_names):
+                    commands_at_start.append(line)
+                    skip_parent = False
+                elif line.startswith("wlan access-rule"):
+                    skip_parent = True
+                elif not skip_parent and not "index" in line:
+                    commands_at_start.append(line)
             # wired-port-profile wired-SetMeUp and E0 is not editable, remove from commands
             clean_commands = []
             for line in commands:
