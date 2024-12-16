@@ -470,6 +470,15 @@ class Aruba505Driver(NetworkDriver):
             commands_at_end = [line for line in commands if "mgmt-auth-server" in line]
             clean_commands = [line for line in commands if "mgmt-auth-server" not in line]
             commands = clean_commands
+            # save each auth server config to maintain the given order
+            insert_at_index = []
+            for index, command in enumerate(commands):
+                if index != 0 and command.startswith("wlan auth-server "):
+                    insert_at_index.append(index)
+            for index in reversed(insert_at_index):
+                commands.insert(index, "conf t")
+                commands.insert(index, "commit apply no-save")
+                commands.insert(index, "end")
             # add auth servers to wired port profiles again
             for line in self.new_config_dict.get("wired"):
                 if "wired-port-profile" in line and not "wired-SetMeUp" in line:
