@@ -1,5 +1,5 @@
-import setuptools
 """setup.py file."""
+import setuptools
 
 # read the contents of your README file
 with open("README.md", "r") as fh:
@@ -7,8 +7,8 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name = "napalm_aruba505",
-    version = "0.0.170",
-    author = "David Johnnes",
+    version = "0.0.171",
+    author = "David Johnnes, Sonja Karpe",
     author_email = "david.johnnes@gmail.com",
     description = ("Napalm Aruba driver for ArubaOS Wi-Fi devices '505' "),
     license = "Apache 2",
