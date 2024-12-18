@@ -923,8 +923,8 @@ class Aruba505Driver(NetworkDriver):
                 interfaces[remember_parent_line]["mac_address"] = line.split()[-1]
             if "Speed" and "duplex" in line:
                 speed = line.split()[1]
-                if"Mb/s," in speed:
-                    speed.replace("Mb/s,", "")
+                if "Mb/s," in speed:
+                    speed = speed.replace("Mb/s,", "")
                     interfaces[remember_parent_line]["speed"] = speed
 
         if wired_ports:
@@ -936,8 +936,11 @@ class Aruba505Driver(NetworkDriver):
                 interface = data_list[0].replace("E", "eth")
                 admin_status = data_list[4]
                 speed = data_list[6]
+                speed = speed.replace("Mb/s,", "")
                 interfaces[interface]["is_enabled"] = True if admin_status == "Up" else False
-                interfaces[interface]["speed"] = speed
+                # speed taken from 'show interface' output is more acurate, when interface is up
+                if interfaces[interface]["is_up"] == False:
+                    interfaces[interface]["speed"] = speed
 
         for line in ip_interface_data.splitlines():
             if line.startswith("Interface  "):
@@ -1114,4 +1117,5 @@ class Aruba505Driver(NetworkDriver):
                     ip_interfaces[interface]["ipv6"] = {ipv6_addr: {"prefix_length": prefix_length}}
 
         return ip_interfaces
+
 
