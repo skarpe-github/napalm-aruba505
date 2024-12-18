@@ -755,7 +755,17 @@ class Aruba505Driver(NetworkDriver):
                 configs["running"] = string_without_empty_lines
 
         if retrieve.lower() in ("startup", "all"):
-            pass
+            command = "show configuration"
+            output_ = self._send_command(command)
+            if output_:
+                configs["startup"] = output_
+                data = str(configs["startup"]).split("\n")
+                non_empty_lines = [line for line in data if line.strip() != ""]
+
+                string_without_empty_lines = ""
+                for line in non_empty_lines:
+                    string_without_empty_lines += line + "\n"
+                configs["startup"] = string_without_empty_lines
         return configs
 
     def get_facts(self):
@@ -1101,4 +1111,5 @@ class Aruba505Driver(NetworkDriver):
                     ip_interfaces[interface]["ipv6"] = {ipv6_addr: {"prefix_length": prefix_length}}
 
         return ip_interfaces
+
 
