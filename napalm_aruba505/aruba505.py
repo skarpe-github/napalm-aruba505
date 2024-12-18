@@ -891,50 +891,53 @@ class Aruba505Driver(NetworkDriver):
         """
         interfaces = {}
 
+        wired_ports = self._send_command("show wired-port-settings")
+        port_regex = r"(?<=-{19}\n)((.|\n)*)(?=Port Profile Assignments)"
+
         show_interfaces = "show interface"
         interface_data = self._send_command(show_interfaces)
         new_interface_data = [line.strip() for line in interface_data.splitlines()]
-        temp_list = []
 
         show_ip_interfaces = "show ip interface brief"
         ip_interface_data = self._send_command(show_ip_interfaces)
 
+        remember_parent_line = ""
         for line in new_interface_data:
             if line.startswith("eth"):
-                temp_list.append(line.split()[0])
-                if "line protocol is up" in line:
-                    temp_list.append(True)
-                    temp_list.append(True)
-                elif "line protocol is down" in line:
-                    temp_list.append(False)
-                    temp_list.append(False)
-
-            if line.startswith("bond0"):
-                # For ArubaOS (MODEL: 505)
-                temp_list.append(line.split()[0])
-                if "line protocol is up" in line:
-                    temp_list.append(True)
-                    temp_list.append(True)
-
-            if line.startswith("Hardware is"):
-                temp_list.append(line.split()[-1])
-
-            if "Speed" and "duplex" in line:
-                line = line.split()[1]
-                if "unknown" in line:
-                    temp_list.append("unknown")
-                elif "Mb/s," in line:
-                    temp_list.append(line.replace("Mb/s,", ""))
-                interfaces[f"{temp_list[0]}"] = {
-                    "is_up": temp_list[1],
-                    "is_enabled": temp_list[2],
+                remember_parent_line = line.split()[0]
+                interfaces[remember_parent_line] = {
+                    "is_up": False,
+                    "is_enabled": False,
                     "description": "",
                     "last_flapped": -1.0,
-                    "speed": temp_list[4],
+                    "speed": 0,
                     "mtu": 0,
-                    "mac_address": temp_list[3],
-                }
-                temp_list.clear()
+                    "mac_address": ""}
+                if "line protocol is up" in line:
+                    interfaces[remember_parent_line]["is_up"] = True
+                    interfaces[remember_parent_line]["is_enabled"] = True
+                elif "line protocol is down" in line:
+                    interfaces[remember_parent_line]["is_up"] = False
+                    interfaces[remember_parent_line]["is_enabled"] = False
+            if line.startswith("Hardware is"):
+                interfaces[remember_parent_line]["mac_address"] = line.split()[-1]
+            if "Speed" and "duplex" in line:
+                speed = line.split()[1]
+                if"Mb/s," in speed:
+                    speed.replace("Mb/s,", "")
+                    interfaces[remember_parent_line]["speed"] = speed
+
+        if wired_ports:
+            port_data = re.search(port_regex, wired_ports, re.MULTILINE)
+            for line in port_data.group(1).splitlines():
+                if not line.startswith("E"):
+                    continue
+                data_list = line.split()
+                interface = data_list[0].replace("E", "eth")
+                admin_status = data_list[4]
+                speed = data_list[6]
+                interfaces[interface]["is_enabled"] = True if admin_status == "Up" else False
+                interfaces[interface]["speed"] = speed
 
         for line in ip_interface_data.splitlines():
             if line.startswith("Interface  "):
@@ -1111,5 +1114,4 @@ class Aruba505Driver(NetworkDriver):
                     ip_interfaces[interface]["ipv6"] = {ipv6_addr: {"prefix_length": prefix_length}}
 
         return ip_interfaces
-
 
