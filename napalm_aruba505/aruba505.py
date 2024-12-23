@@ -903,7 +903,7 @@ class Aruba505Driver(NetworkDriver):
 
         remember_parent_line = ""
         for line in new_interface_data:
-            if line.startswith("eth"):
+            if line.startswith("eth") or line.startswith("bond"):
                 remember_parent_line = line.split()[0]
                 interfaces[remember_parent_line] = {
                     "is_up": False,
@@ -937,6 +937,13 @@ class Aruba505Driver(NetworkDriver):
                 admin_status = data_list[4]
                 speed = data_list[6]
                 speed = speed.replace("Mb/s,", "")
+                interfaces.setdefault(interface,{"is_up": False,
+                    "is_enabled": False,
+                    "description": "",
+                    "last_flapped": -1.0,
+                    "speed": 0,
+                    "mtu": 0,
+                    "mac_address": ""})
                 interfaces[interface]["is_enabled"] = True if admin_status == "Up" else False
                 # speed taken from 'show interface' output is more acurate, when interface is up
                 if interfaces[interface]["is_up"] == False:
