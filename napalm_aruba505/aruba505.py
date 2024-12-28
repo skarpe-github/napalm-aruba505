@@ -54,11 +54,7 @@ class Aruba505Driver(NetworkDriver):
         self.timeout = timeout
         self.transport = optional_args.get("transport", "ssh")
         self.interfaces = []
-        self.archive = str()
-        self.new_running_config = str()
-        self.config_commands = list()
 
-        # attributes used by config replace
         self.compare_config_has_run = False
         self.pre_change = list()
         self.new_config = list()
@@ -91,49 +87,24 @@ class Aruba505Driver(NetworkDriver):
         self.platform = "cisco_ios"
         self.profile = [self.platform]
 
-    def get_running_config(self):
-        _running_config = self.get_config()
-        if _running_config:
-            return _running_config["running"]
-
-    def switch_to_config_mode(self):
-        cmd = f"config terminal"
-        self.device.send_command(cmd, expect_string=r"#", read_timeout=90)
-
-    def switch_to_safe_mode(self):
-        cmd = f"end"
-        self.device.send_command(cmd, expect_string=r"#", read_timeout=90)
-
     def load_merge_candidate(self, filename=None, config=None):
         """
-        1- cache a copy or the current running config in the archive variable
-        2- run the commands to alter the current running config
+        Aruba Access Point do not have a candidate data store.
+        Therefore, this method loads the new configuration into a class attribute.
+
+        :param filename: Path to the file containing the desired configuration. By default is None.
+        :param config: String containing the desired configuration.
+        :raise ReplaceConfigException: If there is an error on the configuration sent.
         """
         self.config_replace = False
-
-        _running_config = self.get_running_config()
-        if _running_config:
-            self.archive = _running_config
-        if not _running_config:
-            raise ValueError(f"The first copy of old config is not in the cache\n")
+        configs = self.get_config(retrieve="running")
+        self.pre_change = configs.get("running", "").split("\n")
+        if not self.pre_change:
+            raise ValueError("Not able to retrieve current running-config.")
         if config:
-            self.config_commands = [i for i in config]
+            self.new_config = config.split("\n")
         if not config:
             raise ValueError(f"***** No config commands provided! *****\n")
-
-        if self.config_commands:
-            # enter config mode
-            self.switch_to_config_mode()
-
-            for cmd in self.config_commands:
-                self.device.send_command(cmd, expect_string=r"#", read_timeout=90)
-
-            # return to global config mode
-            self.switch_to_safe_mode()
-            # Save config
-            self._send_command("commit apply")
-            # Exiting
-            self.switch_to_safe_mode()
         if filename:
             raise NotImplementedError
 
@@ -141,7 +112,7 @@ class Aruba505Driver(NetworkDriver):
         self, filename: str = None, config: str = None
     ) -> None:
         """
-        Aruba Access Point do not have a candidate data store. 
+        Aruba Access Point do not have a candidate data store.
         Therefore, this method loads the new configuration into a class attribute.
 
         :param filename: Path to the file containing the desired configuration. By default is None.
@@ -202,21 +173,13 @@ class Aruba505Driver(NetworkDriver):
                 diff = ""
         else:
             # diff when loaded by merge method
-            self.new_running_config = self.get_running_config()
             diff = ""
-            if self.archive and self.new_running_config:
-                for text in difflib.unified_diff(
-                    self.archive.split("\n"), self.new_running_config.split("\n"), n=0
-                ):
-                    if text[:3] not in ("+++", "---", "@@ "):
-                        if diff == "":
-                            diff = diff + text
-                        else:
-                            diff = diff + "\n" + text
-            elif not self.archive:
-                raise ValueError(f"The old config is not in the cache\n")
-            elif not self.new_running_config:
-                raise ValueError(f"The current running config is not available\n")
+            if self.pre_change and self.new_config:
+                for text in difflib.unified_diff(self.pre_change, self.new_config, n=0):
+                    if diff == "":
+                        diff = diff + text
+                    else:
+                        diff = diff + "\n" + text
         return diff
 
     def _slice_config(self, config: list) -> dict:
@@ -561,11 +524,18 @@ class Aruba505Driver(NetworkDriver):
 
     def commit_config(self) -> None:
         """
-        Aruba Access Points do not have a candidate data store. Therefore, this method replaces the running
-        configuration with the new configuration.
-        Hint for usage: Load the new configuration through the load_replace_candidate method first.
-        Run compare_config next to find differences per config part.
+        Aruba Access Points do not have a candidate data store. Therefore, this method merges or
+        replaces the running configuration with the new configuration.
+
+        Hint for usage:
+        Load the new configuration through the load_merge_candidate or load_replace_candidate methods first.
+
+        For merge: Run compare_config next to find differences.
+        Commit_config will send the commands.
+
+        For replace:Run compare_config next to find differences per config part.
         Commit_config will only replace the config parts that have changed.
+
         All changes will be saved to the startup config in the end.
         """
         # run compare_config to produce diff per config part
@@ -575,6 +545,12 @@ class Aruba505Driver(NetworkDriver):
             for config_part in self.new_config_dict.keys():
                 if self.has_diff.get(config_part):
                     _ = self._send_command(self.new_config_commands.get(config_part, []))
+        else:
+            if self.new_config:
+                self.new_config.insert(0, "conf t")
+                self.new_config.append("end")
+                self.new_config.append("commit apply")
+                _ = self._send_command(self.new_config)
         # permanently save configuration
         # 'commit apply' does not work even though it should according to documentation
         self.device.send_command("write memory")
@@ -903,7 +879,7 @@ class Aruba505Driver(NetworkDriver):
 
         remember_parent_line = ""
         for line in new_interface_data:
-            if line.startswith("eth"):
+            if line.startswith("eth") or line.startswith("bond"):
                 remember_parent_line = line.split()[0]
                 interfaces[remember_parent_line] = {
                     "is_up": False,
@@ -937,6 +913,13 @@ class Aruba505Driver(NetworkDriver):
                 admin_status = data_list[4]
                 speed = data_list[6]
                 speed = speed.replace("Mb/s,", "")
+                interfaces.setdefault(interface,{"is_up": False,
+                    "is_enabled": False,
+                    "description": "",
+                    "last_flapped": -1.0,
+                    "speed": 0,
+                    "mtu": 0,
+                    "mac_address": ""})
                 interfaces[interface]["is_enabled"] = True if admin_status == "Up" else False
                 # speed taken from 'show interface' output is more acurate, when interface is up
                 if interfaces[interface]["is_up"] == False:
